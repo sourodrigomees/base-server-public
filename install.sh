@@ -37,18 +37,20 @@ choose_clone_method() {
   require_tty "não há um terminal disponível para escolher o método de clone. Defina BASE_SERVER_CLONE_METHOD=ssh|https."
 
   while true; do
-    printf '\nComo deseja clonar o repositório %s?\n' "${REPOSITORY_SLUG}"
-    printf '  [1] SSH   - cola uma chave privada autorizada (padrão)\n'
-    printf '  [2] HTTPS - usa um fine-grained personal access token do GitHub\n'
-    printf 'Escolha [1/2]: '
+    printf '\nComo deseja clonar o repositório %s?\n' "${REPOSITORY_SLUG}" >/dev/tty
+    printf '  [1] SSH   - cola uma chave privada autorizada (padrão)\n' >/dev/tty
+    printf '  [2] HTTPS - usa um fine-grained personal access token do GitHub\n' >/dev/tty
+    printf 'Escolha [1/2]: ' >/dev/tty
 
     local answer=""
-    read -r answer </dev/tty || true
+    if ! read -r answer </dev/tty; then
+      fail "não foi possível ler a escolha do terminal. Rode o instalador em um terminal interativo ou defina BASE_SERVER_CLONE_METHOD=ssh|https."
+    fi
 
     case "${answer,,}" in
       ''|1|ssh) CLONE_METHOD="ssh"; return ;;
       2|https|http) CLONE_METHOD="https"; return ;;
-      *) printf '\nOpção inválida.\n' ;;
+      *) printf '\nOpção inválida.\n' >/dev/tty ;;
     esac
   done
 }
