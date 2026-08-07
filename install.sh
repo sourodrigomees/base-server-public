@@ -56,9 +56,16 @@ prompt_github_token() {
 # Confirma a credencial antes do clone: erra rápido e com uma mensagem que
 # aponta as causas reais, em vez de deixar o git falhar no meio do download.
 check_repository_access() {
-  GIT_TERMINAL_PROMPT=0 \
-    git ls-remote "https://x-access-token:${GIT_TOKEN}@${GIT_HOST}/${REPOSITORY_SLUG}.git" \
-    >/dev/null 2>&1
+  local status=0
+
+  # A saída do git é preservada para o diagnóstico, mas com o token removido:
+  # ele aparece na URL que o próprio git ecoa nas mensagens de erro.
+  ACCESS_ERROR="$(GIT_TERMINAL_PROMPT=0 \
+    git ls-remote "https://x-access-token:${GIT_TOKEN}@${GIT_HOST}/${REPOSITORY_SLUG}.git" 2>&1 >/dev/null)" ||
+    status=$?
+
+  ACCESS_ERROR="${ACCESS_ERROR//${GIT_TOKEN}/***}"
+  return "${status}"
 }
 
 require_repository_access() {
@@ -69,12 +76,14 @@ require_repository_access() {
       return 0
     fi
 
-    printf '\n\033[1;31m[base-server] O GitHub recusou o token.\033[0m\n' >&2
-    printf 'Verifique se ele:\n' >&2
+    printf '\n\033[1;31m[base-server] Não foi possível acessar o repositório.\033[0m\n' >&2
+    printf 'Resposta do git:\n%s\n\n' "${ACCESS_ERROR}" >&2
+    printf 'Se a mensagem acima citar autenticação, verifique se o token:\n' >&2
     printf '  - não está expirado;\n' >&2
     printf '  - tem o dono de %s como "Resource owner";\n' "${REPOSITORY_SLUG}" >&2
     printf '  - inclui esse repositório em "Repository access";\n' >&2
     printf '  - concede a permissão "Contents: Read".\n' >&2
+    printf 'Confirme também se o repositório %s existe com esse nome exato.\n' "${REPOSITORY_SLUG}" >&2
 
     if [[ -n "${BASE_SERVER_GITHUB_TOKEN:-}" ]]; then
       fail "o token de BASE_SERVER_GITHUB_TOKEN não tem acesso a ${REPOSITORY_SLUG}."
