@@ -46,7 +46,47 @@ prompt_github_token() {
   read -rs GIT_TOKEN </dev/tty || true
   printf '\n'
 
+  # Espaços e quebras coladas junto com o token são um erro comum e o GitHub
+  # devolve apenas "invalid username or token", sem indicar a causa.
+  GIT_TOKEN="${GIT_TOKEN//[[:space:]]/}"
+
   [[ -n "${GIT_TOKEN}" ]] || fail "nenhum token informado."
+}
+
+# Confirma a credencial antes do clone: erra rápido e com uma mensagem que
+# aponta as causas reais, em vez de deixar o git falhar no meio do download.
+check_repository_access() {
+  GIT_TERMINAL_PROMPT=0 \
+    git ls-remote "https://x-access-token:${GIT_TOKEN}@${GIT_HOST}/${REPOSITORY_SLUG}.git" \
+    >/dev/null 2>&1
+}
+
+require_repository_access() {
+  local attempt
+
+  for attempt in 1 2 3; do
+    if check_repository_access; then
+      return 0
+    fi
+
+    printf '\n\033[1;31m[base-server] O GitHub recusou o token.\033[0m\n' >&2
+    printf 'Verifique se ele:\n' >&2
+    printf '  - não está expirado;\n' >&2
+    printf '  - tem o dono de %s como "Resource owner";\n' "${REPOSITORY_SLUG}" >&2
+    printf '  - inclui esse repositório em "Repository access";\n' >&2
+    printf '  - concede a permissão "Contents: Read".\n' >&2
+
+    if [[ -n "${BASE_SERVER_GITHUB_TOKEN:-}" ]]; then
+      fail "o token de BASE_SERVER_GITHUB_TOKEN não tem acesso a ${REPOSITORY_SLUG}."
+    fi
+
+    if [[ ${attempt} -ge 3 ]]; then
+      fail "não foi possível autenticar no repositório ${REPOSITORY_SLUG}."
+    fi
+
+    GIT_TOKEN=""
+    prompt_github_token
+  done
 }
 
 # Grava o token no formato do credential helper "store" do Git, para que os
@@ -83,6 +123,10 @@ log "Verificando dependências..."
 install_dependencies
 
 prompt_github_token
+
+log "Validando o acesso a ${REPOSITORY_SLUG}..."
+require_repository_access
+
 REPOSITORY_URL="https://x-access-token:${GIT_TOKEN}@${GIT_HOST}/${REPOSITORY_SLUG}.git"
 
 if [[ -e "${PROJECT_DIR}" ]]; then
@@ -90,7 +134,7 @@ if [[ -e "${PROJECT_DIR}" ]]; then
 fi
 
 log "Baixando o base-server (${REPOSITORY_SLUG}) em ${PROJECT_DIR}..."
-git clone "${REPOSITORY_URL}" "${PROJECT_DIR}"
+GIT_TERMINAL_PROMPT=0 git clone "${REPOSITORY_URL}" "${PROJECT_DIR}"
 REPOSITORY_URL=""
 
 # O remote fica sem credencial; a autenticação passa a vir do credential helper.
